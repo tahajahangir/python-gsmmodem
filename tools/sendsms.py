@@ -17,6 +17,7 @@ def parseArgs():
     from argparse import ArgumentParser
     parser = ArgumentParser(description='Simple script for sending SMS messages')
     parser.add_argument('-i', '--port', metavar='PORT', help='port to which the GSM modem is connected; a number or a device name.')
+    parser.add_argument('-l', '--lock-path', metavar='PATH', help='Use oslo.concurrency to prevent concurrent access to modem')
     parser.add_argument('-b', '--baud', metavar='BAUDRATE', default=115200, help='set baud rate')
     parser.add_argument('-p', '--pin', metavar='PIN', default=None, help='SIM card PIN')
     parser.add_argument('-d', '--deliver', action='store_true', help='wait for SMS delivery report')
@@ -41,6 +42,7 @@ def parseArgsPy26():
         parser.error('Incorrect number of arguments - please specify a DESTINATION to send to, e.g. {0} 012789456'.format(sys.argv[0]))
     else:
         options.destination = args[0]
+        options.lock_path = None
         return options
 
 def main():
@@ -48,6 +50,21 @@ def main():
     if args.port == None:
         sys.stderr.write('Error: No port specified. Please specify the port to which the GSM modem is connected using the -i argument.\n')
         sys.exit(1)
+
+    if args.lock_path is None:
+        send_sms(args)
+    else:
+        try:
+            from oslo_concurrency import lockutils
+        except ImportError:
+            print('oslo_concurrency package is missing')
+            sys.exit(1)
+        # apply `lockutils.synchronized` decorator and run
+        decorator = lockutils.synchronized('python_gsmmodem_sendsms', external=True, lock_path=args.lock_path)
+        decorator(send_sms)(args)
+
+
+def send_sms(args):
     modem = GsmModem(args.port, args.baud, AT_CNMI=args.CNMI)
     # Uncomment the following line to see what the modem is doing:
     #logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.DEBUG)
